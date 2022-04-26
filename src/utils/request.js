@@ -1,85 +1,75 @@
-import axios from 'axios'
-import { MessageBox, Message } from 'element-ui'
+import axios from 'axios';
 import store from '@/store'
-import { getToken } from '@/utils/auth'
+import router from '@/router'
+import { getTimeStamp } from '@/utils/auth'
+import {Message} from 'element-ui'
 
-// create an axios instance
+const TimeOut = 3600 // 定义超时时间
+
 const service = axios.create({
-  baseURL: process.env.VUE_APP_BASE_API, // url = base url + request url
-  // withCredentials: true, // send cookies when cross-domain requests
-  timeout: 5000 // request timeout
+  baseURL:process.env.VUE_APP_BASE_API,//在env.development文件中配置的开发环境路径
+  //npm run serve 是/api 而npm run build是/prod-api
+  timeout: 5000 // 定义5秒超时
 })
 
-// request interceptor
+//请求拦截器
 service.interceptors.request.use(
-  config => {
-    // do something before request is sent
-
-    if (store.getters.token) {
-      // let each request carry token
-      // ['X-Token'] is a custom headers key
-      // please modify it according to the actual situation
-      config.headers['X-Token'] = getToken()
+  (config)=>{
+    if(store.getters.token){//如果token存在，注入token到请求中
+      //token存在，检查时间戳是否过期
+      //调用函数判断是否超时
+      if(IsCheckTimeOut()){//如果超时
+        //调用登出
+        store.dispatch('user/logout')
+        //跳转至登录页
+        router.push('/login')
+        //报出token超时
+        return Promise.reject(new Error('token超时了'))
+      }
+      config.headers['Authorization'] = `Bearer ${store.getters.token}`
     }
+
     return config
   },
-  error => {
-    // do something with request error
-    console.log(error) // for debug
+  (error)=>{
+    //
     return Promise.reject(error)
   }
 )
 
-// response interceptor
+//响应拦截器
 service.interceptors.response.use(
-  /**
-   * If you want to get http information such as headers or status
-   * Please return  response => response
-  */
-
-  /**
-   * Determine the request status by custom code
-   * Here is just an example
-   * You can also judge the status by HTTP Status Code
-   */
-  response => {
-    const res = response.data
-
-    // if the custom code is not 20000, it is judged as an error.
-    if (res.code !== 20000) {
-      Message({
-        message: res.message || 'Error',
-        type: 'error',
-        duration: 5 * 1000
-      })
-
-      // 50008: Illegal token; 50012: Other clients logged in; 50014: Token expired;
-      if (res.code === 50008 || res.code === 50012 || res.code === 50014) {
-        // to re-login
-        MessageBox.confirm('You have been logged out, you can cancel to stay on this page, or log in again', 'Confirm logout', {
-          confirmButtonText: 'Re-Login',
-          cancelButtonText: 'Cancel',
-          type: 'warning'
-        }).then(() => {
-          store.dispatch('user/resetToken').then(() => {
-            location.reload()
-          })
-        })
-      }
-      return Promise.reject(new Error(res.message || 'Error'))
-    } else {
-      return res
+  response=>{
+    // console.log(response)
+    const {success,message,data} = response.data
+    //   要根据success的成功与否决定下面的操作
+    if(success){
+      return data
+    }
+    else{
+      Message.error(message) // 提示错误消息
+      return Promise.reject(new Error(message))
     }
   },
-  error => {
-    console.log('err' + error) // for debug
-    Message({
-      message: error.message,
-      type: 'error',
-      duration: 5 * 1000
-    })
+  error=>{
+    // error 信息 里面 response的对象
+    if (error.response && error.response.data && error.response.data.code === 10002) {
+      // 当等于10002的时候 表示 后端告诉我token超时了
+      store.dispatch('user/logout') // 登出action 删除token
+      router.push('/login')
+    }
+    else{
+      //弹出错误信息
+      Message.error(error.message)
+    }
     return Promise.reject(error)
   }
 )
 
+//判断时间戳是否超时
+function IsCheckTimeOut(){
+  const current = Date.now()
+  const timeStamp = getTimeStamp()
+  return (current - timeStamp)/1000 > TimeOut
+}
 export default service

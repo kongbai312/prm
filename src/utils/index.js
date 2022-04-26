@@ -115,3 +115,20 @@ export function param2Obj(url) {
   })
   return obj
 }
+
+
+//将数组数据转化成树形结构
+//list 为循环的数组 rootValue判断是否为根部 pid为空则为根部
+export function tranListToTreeData(list,rootValue){
+  const result = []
+  list.forEach((item)=>{
+    if(item.pid === rootValue){
+      // 找到之后 就要去找 item 下面有没有子节点
+      const children = tranListToTreeData(list,item.id)
+      item.children = children
+      //将item放入数组
+      result.push(item)
+    }
+  })
+  return result
+}
